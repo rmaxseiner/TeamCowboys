@@ -1,0 +1,289 @@
+---
+title: "Global Yearly Data Analysis"
+author: "Team Cowboys"
+date: "4/16/2022"
+output: pdf_document
+---
+
+```{r setup, set.seed(1),include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+#Group 1: Diabetes Dataset
+#Members: Phil, Ron, Kelly, Jane
+#Libraries used 
+library(caret) #ML Model buidling package
+library(tidyverse) #ggplot and dplyr
+library(MASS) #Modern Applied Statistics with S
+library(mlbench) #data sets from the UCI repository.
+library(summarytools)
+library(corrplot) #Correlation plot
+library(gridExtra) #Multiple plot in single grip space
+library(timeDate) 
+library(pROC) #ROC
+library(caTools) #AUC
+library(rpart.plot) #CART Decision Tree
+library(e1071) #imports graphics, grDevices, class, stats, methods, utils
+library(doParallel)
+library(AppliedPredictiveModeling)
+library(rpart)
+library(partykit)
+library(randomForest)
+library(varImp)
+registerDoParallel(cores=7)
+set.seed(1)
+
+```
+
+
+## Data Preparation
+* No near zero variance predictors.  No action necessary.
+* No NA values. No action necessary.
+* There are a significant number of 0 Values
+```{r NearZeroVariance,set.seed(1)}
+#Confirmation of No Near Zero Variance for Predictor Variables
+globalYearly <- read.csv('data/GlobalYearly.csv')
+str(globalYearly)
+globalYearly
+
+predictors <- globalYearly[c(2, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17, 18, 19, 20, 21)]
+y <- globalYearly[c("AverageTemperature")]
+predictors
+#Summary Statistics
+summary(predictors)
+print(nearZeroVar(predictors))
+#Check for missing values
+#Confirmed No Missing Values
+sapply(predictors, function(x) sum(is.na(x)))
+
+```
+
+## Skewness
+Generally values between -1 and 1 are acceptable. Insulin, Age and Pedigree have skewness values beyond these thresholds.  Using the log of these functions removes the skewness. 
+*Note doesn't boxcox correct for this?
+
+```{r Skewness, set.seed(1)}
+#skewness 
+skewness(y$AverageTemperature) #0.898
+skewness(predictors$Gas.consumption) #0.529
+skewness(predictors$Coal.consumption) #0.145
+skewness(predictors$Oil.consumption) #2.026
+skewness(predictors$CoalGrowth) #1.912
+skewness(predictors$OilGrowth) #1.912
+skewness(predictors$GasGrowth) #1.912
+skewness(predictors$Gas.cumsum) #0.595
+skewness(predictors$Coal.cumsum) #1.912
+skewness(predictors$Oil.cumsum) #1.125
+skewness(predictors$log_Gas) #0.595
+skewness(predictors$log_Coal) #1.912
+skewness(predictors$log_Oil) #1.125
+
+```
+
+## Graphical Review of data
+
+```{r Histogram, set.seed(1)}
+#Histograms : Predictor Variables
+par(mfrow = c(3,3)) #Histograms will be 3x3
+for (i in 1:ncol(predictors))
+{hist(predictors[ ,i], xlab = names(predictors[i]), main = paste(names(predictors[i]), "Histogram"), col="orange")  
+} 
+#Correlation Plot:
+#pairs(df)
+
+corrplot(cor(predictors), method="number")
+
+pca <-prcomp(predictors)
+summary(pca)
+```
+
+
+```{r BoxPlots, set.seed(1)}
+#Box Plots of Diabetes: Predictor Variables
+boxplot(y$AverageTemperature , main = "Average Temperature Boxplot", col = "red")
+boxplot(predictors$Population, main = "Population Boxplot", col = "red")
+boxplot(predictors$Gas.consumption, main = "Gas Consumption Boxplot", col = "red")
+boxplot(predictors$Oil.consumption, main = "Oil Consumption Boxplot", col = "red")
+boxplot(predictors$CoalGrowth, main = "Coal Growth Boxplot", col = "red")
+boxplot(predictors$OilGrowth, main = "Oil Growth Boxplot", col = "red")
+boxplot(predictors$GasGrowth, main = "Gas Growth Boxplot", col = "red")
+boxplot(predictors$Gas.cumsum, main = "Gas Cumulative Boxplot", col = "red")
+boxplot(predictors$Oil.cumsum, main = "Oil Cumulative Boxplot", col = "red")
+boxplot(predictors$Coal.cumsum, main = "Coal Cumulative Boxplot", col = "red")
+```
+
+## Data Splitting
+Data will be split 80%/20% train/testing.  
+
+```{r SplitData,set.seed(1)}
+#Split Training and Test Data, 80/20
+df <- merge(y, predictors)
+set.seed(1)
+split <- caret::createDataPartition(y = df$AverageTemperature , times = 1, p = 0.8, list = FALSE)
+#Train_data Split, 80%
+train_data <- df[split,]
+#Test_data Split, 20%
+test_data <- df[-split,]
+#Summary Statistics
+summary(train_data)
+```
+
+## Model Training
+The following models will be trained on the training data.  
+
+
+```{r Models, set.seed(1)}
+##################Training Models########################## 
+#Linear Regression: Training Model
+#No Tuning Parameters for Simple Logistic Regression
+set.seed(1)
+lr_train_data <- caret::train(AverageTemperature~., data = train_data,
+                          method = "lm",
+                          tuneLength = 10,
+                          trControl = trainControl(method = "cv", number = 10),
+                          preProcess = c("center","scale", "BoxCox"))
+lr_train_data$preProcess
+lr_train_data
+summary(lr_train_data)
+#Random Forest: Training Model
+set.seed(1)
+rf_train_data <- caret::train(AverageTemperature ~., data = train_data,
+                             method = "rf",
+                             trControl = trainControl(method = "cv", number = 10),
+                             preProcess = c("center","scale"))
+rf_train_data
+plot(rf_train_data)
+rf_train_data$finalModel$importance
+
+#K Nearest Neighbor: Training Model
+set.seed(1)
+knn_train_data <- caret::train(AverageTemperature ~., data = train_data,
+                          method = "knn",
+                          tuneGrid = expand.grid(.k = c(3:30)),
+                          trControl = trainControl(method = "cv", number = 10),
+                          preProcess = c("center","scale"))
+knn_train_data
+plot(knn_train_data) 
+#Classification and Regression Trees (CART): Training Model
+set.seed(1)
+cart_train_data <- caret::train(AverageTemperature ~., data = train_data,
+                            method = "rpart",
+                            tuneLength = 20,
+                            trControl = trainControl(method = "cv", number = 10),
+                            preProcess = c("center","scale"))
+cart_train_data
+FinalTree = cart_train_data$finalModel
+rpartTree = as.party(FinalTree)
+dev.new()
+plot(rpartTree)
+#Neural Net
+registerDoParallel(cores=7)
+nnetGrid <- expand.grid(.decay = c(0, 0.01, 0.1,0.5), 
+                        .size = c(1:10), 
+                        .bag = FALSE
+)
+set.seed(1)
+nnet_train_data <- caret::train(AverageTemperature ~., data = train_data,
+                                method = "avNNet",
+                                tuneGrid = nnetGrid,
+                                trControl = trainControl(method = "cv", number = 10),
+                                preProcess = c("center","scale"), 
+                                linout = TRUE, 
+                                trace = FALSE,
+                                MaxNWts = 10 * (ncol(train_data) + 1) + 10 + 1,
+                                maxit = 500)
+nnet_train_data
+plot(nnet_train_data)
+################# Support Vector Machines #####################
+set.seed(1)
+svmFit <- train(AverageTemperature ~., data = train_data, 
+                method = "svmRadial",
+                tuneLength = 14,
+                preProcess = c("center","scale", "BoxCox"), 
+                trControl = trainControl(method = "cv", number = 10))
+svmFit
+plot(svmFit)
+
+################# Elastinet #####################
+glmnGrid <- expand.grid(.alpha = c(0, .1, .2, .4, .6, .8, 1), 
+                       .lambda = seq(.01, .2, length = 40))
+set.seed(1)
+glmnFit <- train(AverageTemperature ~., data = train_data,
+                method = "glmnet",
+                tuneGrid = glmnGrid,
+                preProcess = c("center","scale", "BoxCox"),
+                trControl = trainControl(method = "cv", number = 10))
+glmnFit
+
+############################ LDA ##############################
+
+#Compare ROC Value by Training Model
+allmodels <- list(Logistic_Regression = lr_train_data, Random_Forest = rf_train_data, KNN = knn_train_data, CART = cart_train_data, NNET = nnet_train_data, SVM = svmFit, ENet = glmnFit)
+trainresults <- resamples(allmodels)
+bwplot(trainresults)
+```
+
+
+```{r ConfusionMatrix,set.seed(1)}
+###########################Test Data############################
+#Logistic Regression: Testing Data
+set.seed(1)
+lrpredict <- predict(lr_train_data, test_data)
+lrresults <- postResample(pred = lrpredict, test_data$AverageTemperature)
+lrresults
+#Random Forest: Testing Data
+set.seed(1)
+rfpredict <- predict(rf_train_data, test_data)
+
+rfresults <-postResample(pred = rfpredict, test_data$AverageTemperature)
+rfresults
+#K Nearest Neighbor: Testing Data
+set.seed(1)
+knnpredict <- predict(knn_train_data, test_data)
+
+knnresults <-postResample(pred = knnpredict, test_data$AverageTemperature)
+knnresults
+#Classification and Regression Trees (CART): Testing Data
+set.seed(1)
+cartpredict <- predict(cart_train_data, test_data)
+#Confusion Matrix Accuracy
+cartresults <- postResample(pred = cartpredict, test_data$AverageTemperature)
+cartresults
+#Neural Net: Testing Data
+set.seed(1)
+nnetpredict <- predict(nnet_train_data, test_data)
+#Confusion Matrix Accuracy
+nnetresults <- postResample(nnetpredict, test_data$AverageTemperature)
+nnetresults
+#Support Vector Machines
+set.seed(1)
+svmpredict <- predict(svmFit, test_data)
+#Confusion Matrix Accuracy
+svmresults <- postResample(svmpredict, test_data$AverageTemperature)
+svmresults
+# Elastinet 
+set.seed(1)
+glmnpredict <- predict(glmnFit, test_data)
+#Confusion Matrix Accuracy
+glmnresults <- postResample(glmnpredict, test_data$AverageTemperature)
+glmnresults
+```
+
+
+```{r FinalResult,set.seed(1)}
+#Comparing Test Results
+
+lrfinal<- c(lrresults[1], lrresults[2], lrresults[3])
+rffinal <- c(rfresults[1], rfresults[2], rfresults[3])
+knnfinal <- c(knnresults[1], knnresults[2], knnresults[3])
+cartfinal <- c(cartresults[1], cartresults[2], cartresults[3])
+nnetfinal <- c(nnetresults[1], nnetresults[2], nnetresults[3])
+svmfinal <- c(svmresults[1], svmresults[2], svmresults[3])
+glmnfinal <- c(glmnresults[1], glmnresults[2], glmnresults[3])
+allmodelsfinal <- data.frame(rbind(lrfinal, rffinal, knnfinal, cartfinal, nnetfinal, svmfinal, glmnfinal))
+names(allmodelsfinal) <- c("RSME", "Rsquared", "MAE")
+allmodelsfinal 
+
+#To find the Most Important Predictors within the Diabetes Dataset
+set.seed(1)
+importance <- randomForest(AverageTemperature ~., data = train_data, importance=TRUE) # fit the random forest with default parameter
+caret::varImp(importance) # get variable importance, based on mean decrease in accuracy
+```
