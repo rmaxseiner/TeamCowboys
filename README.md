@@ -1,6 +1,14 @@
 # TeamCowboys
 Code for CS-504 project for Team Cowboys.
 
+# Contents
+Main - Modeling and working files. 
+/.ipynb_checkpoints - Jupyter checkpoints
+/1DataProcessing - Data Processing Files
+/Data - Directory that for storing data
+/app - Team Cowboys application Contains all code and data required to run the application
+
+
 # GitHub Basics
 I'm no expert here so I have create some instructions but we can update and improve as we go along.  Will be a good group exercise so we cal all learn. 
 
